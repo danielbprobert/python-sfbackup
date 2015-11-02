@@ -1,4 +1,4 @@
-import sys
+import sys, os
 #sys.tracebacklimit = 0
 import mysql.connector
 from simple_salesforce import Salesforce
@@ -6,8 +6,39 @@ from simple_salesforce.login import SalesforceLogin
 from simple_salesforce.util import date_to_iso8601, SalesforceError
 import time
 
-# insert mysql db connection string here
-config = {'user': '','password': '','host': '','database': '','raise_on_warnings': True,}
+# setup your environment
+try:
+	from backconf import mysqlun,mysqlpwd,mysqlhn,mysqldb,sfusername,sfpassword,sfsecuritytoken
+	config = {'user': mysqlun,'password': mysqlpwd,'host': mysqlhn,'database': mysqldb,'raise_on_warnings': True,}
+	sf = Salesforce(username=sfusername, password=sfpassword, security_token=sfsecuritytoken)
+	print("imported the file?")
+except ImportError, e:
+	print("error importing the file?")
+	mysqlusername = raw_input("MySQL Username: ")
+	mysqlpassword = raw_input("MySQL Password: ")
+	mysqldbname = raw_input("MySQL DBName: ")
+	mysqlhostname = raw_input("MySQL Hostname(localhost or remote url): ")
+	salesforceusername = raw_input("Salesforce Username: ")
+	salesforcepassword = raw_input("Salesforce Password: ")
+	salesforcesecuritytoken = raw_input("Salesforce Token: ")
+	storeconfigsettings = raw_input("Store these credentials(Yes/No): ")
+
+	if storeconfigsettings == 'Yes':
+		print("Creating a stored credential in future you will not be asked for your credentials")
+		file_path = 'backconf.py'
+		try:
+		    fp = open(file_path)
+		except IOError:
+		    # If not exists, create the file
+		    fp = open(file_path, 'w+')
+		    fp.write("mysqlun='%s'\nmysqlpwd='%s'\nmysqldb='%s'\nmysqlhn='%s'\nsfusername='%s'\nsfpassword='%s'\nsfsecuritytoken='%s'" % (mysqlusername,mysqlpassword,mysqldbname,mysqlhostname,salesforceusername,salesforcepassword,salesforcesecuritytoken))
+		    fp.close()
+	else:
+		print("Keep on rocking with temp connnection details")
+
+	config = {'user': mysqlusername,'password': mysqlpassword,'host': mysqlhostname,'database': mysqldbname,'raise_on_warnings': True,}
+	sf = Salesforce(username=salesforceusername, password=salesforcepassword, security_token=salesforcesecuritytoken)
+
 
 # establish connection to local db
 print ("Testing connection with local MySQL DB")
@@ -21,7 +52,6 @@ except mysql.connector.Error as err:
 # silent test to verify connection to salesforce complete
 print ("Testing connection with Salesforce Instance")
 try:
-	sf = Salesforce(username='', password='', security_token='')
 	sf.describe()
 	print ("Connection successful")
 except SalesforceError as err:
@@ -54,12 +84,8 @@ else:
 	print("New Table Created")
 	sfobjfieldcheck = 0;
 
-
-print("Setup stage sf object = ", sfobjcheck )
-print("Setup stage sf field object = ", sfobjfieldcheck )
-
 if sfobjcheck == 0:
-	print ('Starting to get list of Objects')
+	print ('Load the full list of your objects into your MySQL database')
 	for x in sf.describe()["sobjects"]:
 		usefultime = time.strftime('%Y-%m-%d %H:%M:%S')
 		add_objects = ("INSERT INTO sfobject_sfobject "
@@ -131,80 +157,80 @@ if sfobjfieldcheck == 0:
 		print ('All fields have now been added to mysql we added a total of', result)
 else:
 	print ("Figure this script out later")
-# print ('Loop through list of objects stored in mysql and create backup table')
-# print ('Get list of Object currently stored in mysql')
-# query = ("SELECT obj_name FROM sfobject_sfobject")
-# cursor.execute(query)
-# print ('Got list of objects to loop through')
 
-# for newx in cursor:
-# 	objectname = str(newx)
-# 	cleanobjectname1 = objectname.replace("(","")
-# 	cleanobjectname2 = cleanobjectname1.replace("'","")
-# 	cleanobjectname3 = cleanobjectname2.replace(",","")
-# 	cleanobjectname = cleanobjectname3.replace(")","")
-# 	finalcleanobjectname = 'sf_'+cleanobjectname
+
+query = ("SELECT obj_name FROM sfobject_sfobject where obj_keyPrefix is not NULL")
+cursor.execute(query)
+print ('Create Tables for Each SF Object Exported')
+
+for newx in cursor:
+	objectname = str(newx)
+	cleanobjectname1 = objectname.replace("(","")
+	cleanobjectname2 = cleanobjectname1.replace("'","")
+	cleanobjectname3 = cleanobjectname2.replace(",","")
+	cleanobjectname = cleanobjectname3.replace(")","")
+	finalcleanobjectname = 'sf_'+cleanobjectname
 	
-# 	querytblcreate = ("CREATE TABLE %s (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key)") % finalcleanobjectname
-# 	inner_cur = cnx.cursor(buffered=True)
-# 	inner_cur.execute(querytblcreate)
+	querytblcreate = ("CREATE TABLE %s (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key)") % finalcleanobjectname
+	inner_cur = cnx.cursor(buffered=True)
+	inner_cur.execute(querytblcreate)
 
-# 	query2 = ("SELECT field_name, field_type, field_length FROM sfobjectfield_sfobjectfield where field_obj_name = %s ") % cleanobjectname 
-# 	inner_curq = cnx.cursor(buffered=True)
-# 	inner_curq.execute(query2)
+	query2 = ("SELECT field_name, field_type, field_length FROM sfobjectfield_sfobjectfield where field_obj_name = %s ") % cleanobjectname 
+	inner_curq = cnx.cursor(buffered=True)
+	inner_curq.execute(query2)
 
-# 	for xyz in inner_curq:
-# 		objectname = str(newx)
-# 		fieldtype = xyz[1]
-# 		fieldname = xyz[0]
-# 		fieldlength = xyz[2]
-# 		cleanobjectname1 = objectname.replace("(","")
-# 		cleanobjectname2 = cleanobjectname1.replace("'","")
-# 		cleanobjectname3 = cleanobjectname2.replace(",","")
-# 		cleanobjectname = cleanobjectname3.replace(")","")
-# 		finalcleanobjectname = 'sf_'+cleanobjectname
+	for xyz in inner_curq:
+		objectname = str(newx)
+		fieldtype = xyz[1]
+		fieldname = xyz[0]
+		fieldlength = xyz[2]
+		cleanobjectname1 = objectname.replace("(","")
+		cleanobjectname2 = cleanobjectname1.replace("'","")
+		cleanobjectname3 = cleanobjectname2.replace(",","")
+		cleanobjectname = cleanobjectname3.replace(")","")
+		finalcleanobjectname = 'sf_'+cleanobjectname
 
 
-# 		fn = 'SF_'+fieldname
+		fn = 'SF_'+fieldname
 
-# 		if fieldtype == 'id':
-# 			ft = 'VARCHAR(255)'
-# 		if fieldtype == 'boolean':
-# 			ft = 'BOOL'
-# 		if fieldtype == 'datetime':
-# 			ft = 'DATETIME'
-# 		if fieldtype == 'reference':
-# 			ft = 'VARCHAR(255)'
-# 		if fieldtype == 'string':
-# 			ft = 'VARCHAR(255)'
-# 		if fieldtype == 'picklist':
-# 			ft = 'VARCHAR(255)'
-# 		if fieldtype == 'textarea':
-# 			ft = 'BLOB'
-# 		if fieldtype == 'email':
-# 			ft = 'VARCHAR(255)'
-# 		if fieldtype == 'url':
-# 			ft = 'VARCHA(255)'
-# 		if fieldtype == 'phone':
-# 			ft = 'VARCHAR(255)'
-# 		if fieldtype == 'encryptedstring':
-# 			ft = 'VARCHAR(255)'
-# 		if fieldtype == 'double':
-# 			ft = 'DECIMAL'
-# 		if fieldtype == 'date':
-# 			ft = 'DATE'
-# 		if fieldtype == 'multipicklist':
-# 			ft = 'VARCHAR(255)'
-# 		if fieldtype == 'percent':
-# 			ft = 'DECIMAL'
-# 		if fieldtype == 'currency':
-# 			ft = 'VARCHAR(255)'
+		if fieldtype == 'id':
+			ft = 'VARCHAR(255)'
+		if fieldtype == 'boolean':
+			ft = 'BOOL'
+		if fieldtype == 'datetime':
+			ft = 'DATETIME'
+		if fieldtype == 'reference':
+			ft = 'VARCHAR(255)'
+		if fieldtype == 'string':
+			ft = 'VARCHAR(255)'
+		if fieldtype == 'picklist':
+			ft = 'VARCHAR(255)'
+		if fieldtype == 'textarea':
+			ft = 'BLOB'
+		if fieldtype == 'email':
+			ft = 'VARCHAR(255)'
+		if fieldtype == 'url':
+			ft = 'VARCHA(255)'
+		if fieldtype == 'phone':
+			ft = 'VARCHAR(255)'
+		if fieldtype == 'encryptedstring':
+			ft = 'VARCHAR(255)'
+		if fieldtype == 'double':
+			ft = 'DECIMAL'
+		if fieldtype == 'date':
+			ft = 'DATE'
+		if fieldtype == 'multipicklist':
+			ft = 'VARCHAR(255)'
+		if fieldtype == 'percent':
+			ft = 'DECIMAL'
+		if fieldtype == 'currency':
+			ft = 'VARCHAR(255)'
 		
-# 		queryfigureshitout = ("ALTER TABLE %s ADD %s %s") % (finalcleanobjectname,fn, ft)
-# 		inner_cur1 = cnx.cursor(buffered=True)
-# 		inner_cur1.execute(queryfigureshitout)
+		queryfigureshitout = ("ALTER TABLE %s ADD %s %s") % (finalcleanobjectname,fn, ft)
+		inner_cur1 = cnx.cursor(buffered=True)
+		inner_cur1.execute(queryfigureshitout)
 
-# print ('Ok so that is cool - we have just replicated the Salesforce scheme to MySQL')
+print ('Ok so that is cool - we have just replicated the Salesforce scheme to MySQL')
 
 # for x in cursor:
 # 	objectname = str(x)
