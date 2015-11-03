@@ -11,7 +11,6 @@ try:
 	from backconf import mysqlun,mysqlpwd,mysqlhn,mysqldb,sfusername,sfpassword,sfsecuritytoken
 	config = {'user': mysqlun,'password': mysqlpwd,'host': mysqlhn,'database': mysqldb,'raise_on_warnings': True,}
 	sf = Salesforce(username=sfusername, password=sfpassword, security_token=sfsecuritytoken)
-	print("imported the file?")
 except ImportError, e:
 	print("error importing the file?")
 	mysqlusername = raw_input("MySQL Username: ")
@@ -41,21 +40,21 @@ except ImportError, e:
 
 
 # establish connection to local db
-print ("Testing connection with local MySQL DB")
+print ("Testing local MySQL DB connection")
 try:
   cnx = mysql.connector.connect(**config)
   cursor = cnx.cursor(buffered=True)
   print ("Connection successful")
 except mysql.connector.Error as err:
-  print("Something went wrong with your db settings: {}".format(err))
+  print("MySQL db settings error: {}".format(err))
 
 # silent test to verify connection to salesforce complete
-print ("Testing connection with Salesforce Instance")
+print ("Testing Salesforce Instance connection")
 try:
 	sf.describe()
 	print ("Connection successful")
 except SalesforceError as err:
-	print("Something went wrong with your salesforce connection: {}".format(err))
+	print("Salesforce connection error: {}".format(err))
 
 # check if first run of script
 print ("Checking to See if Default SF Object Table is available")
@@ -63,12 +62,10 @@ sfobjectcheck = "SHOW TABLES LIKE 'sfobject_sfobject'"
 cursor.execute(sfobjectcheck)
 result1 = cursor.fetchone()
 if result1:
-    print("The SF Object Table Exists")
     sfobjcheck = 1;
 else:
 	sobjectablecreate = ("CREATE TABLE sfobject_sfobject (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key, obj_name TEXT,obj_keyPrefix TEXT,obj_label TEXT,obj_createable TEXT,obj_custom TEXT,obj_customSetting TEXT,created_at DATETIME DEFAULT NULL,modified_at DATETIME DEFAULT NULL)")
 	cursor.execute(sobjectablecreate)
-	print("New Table Created")
 	sfobjcheck = 0;
 
 print ("Checking to See if Default SF Object Field Table is available")
@@ -76,16 +73,14 @@ sfobjectfieldcheck = "SHOW TABLES LIKE 'sfobjectfield_sfobjectfield'"
 cursor.execute(sfobjectfieldcheck)
 result2 = cursor.fetchone()
 if result2:
-    print("The SF Object Field Table Exists")
     sfobjfieldcheck = 1;
 else:
 	sobjectablecreate = ("CREATE TABLE sfobjectfield_sfobjectfield (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key, field_name TEXT,field_type TEXT,field_label TEXT,field_length TEXT,field_obj_name TEXT,created_at DATETIME DEFAULT NULL,modified_at DATETIME DEFAULT NULL)")
 	cursor.execute(sobjectablecreate)
-	print("New Table Created")
 	sfobjfieldcheck = 0;
 
 if sfobjcheck == 0:
-	print ('Load the full list of your objects into your MySQL database')
+	print ('Query SF and insert list of SF Objects into DB')
 	for x in sf.describe()["sobjects"]:
 		usefultime = time.strftime('%Y-%m-%d %H:%M:%S')
 		add_objects = ("INSERT INTO sfobject_sfobject "
@@ -106,16 +101,15 @@ if sfobjcheck == 0:
 	countobject = ("SELECT COUNT(*) from sfobject_sfobject")
 	cursor.execute(countobject)
 	result=cursor.fetchone()
-	print ('You list of objects have now been added to your local Database, you have a total of', result )
+	cleanresult = " ".join(str(x) for x in result)
+	print ('SF Objects have now been imported into your local DB - %s objects imported') % (cleanresult)
 else:
 	for x in sf.describe()["sobjects"]:
 		objectname = x["name"]
 		countrecords = ("SELECT count(*) from sfobject_sfobject where obj_name = '%s'") % (objectname)
-		# print (countrecords)
 		cursor.execute(countrecords)
 		result=cursor.fetchone()
 		cleanresult = " ".join(str(x) for x in result)
-		# print(cleanresult)
 		if cleanresult == '1':
 			pass
 		else:
@@ -137,11 +131,9 @@ else:
 			cnx.commit()
 
 if sfobjfieldcheck == 0:
-	print ('Get list of Object currently stored in mysql')
+	print ('Query DB for list of Objects in SF')
 	query = ("SELECT obj_name FROM sfobject_sfobject where obj_keyPrefix is not NULL")
 	cursor.execute(query)
-	
-	print ('Loop through each objectname and import field details into MySQL')
 	for x in cursor:
 		objectname = str(x)
 		cleanobjectname1 = objectname.replace("(","")
@@ -149,15 +141,14 @@ if sfobjfieldcheck == 0:
 		cleanobjectname3 = cleanobjectname2.replace("'","")
 		cleanobjectname4 = cleanobjectname3.replace(",","")
 		cleanobjectname = cleanobjectname4.replace(")","")
-		print(cleanobjectname)
 
 		for xy in getattr(sf, cleanobjectname).describe()["fields"]:
-		  	objectname = str(x)
-		  	cleanobjectname1 = objectname.replace("(","")
-			cleanobjectname2 = cleanobjectname1.replace("u'","")
-			cleanobjectname3 = cleanobjectname2.replace("'","")
-			cleanobjectname4 = cleanobjectname3.replace(",","")
-			cleanobjectname = cleanobjectname4.replace(")","")
+		 #  	objectname = str(x)
+		 #  	cleanobjectname1 = objectname.replace("(","")
+			# cleanobjectname2 = cleanobjectname1.replace("u'","")
+			# cleanobjectname3 = cleanobjectname2.replace("'","")
+			# cleanobjectname4 = cleanobjectname3.replace(",","")
+			# cleanobjectname = cleanobjectname4.replace(")","")
 		  	usefultime = time.strftime('%Y-%m-%d %H:%M:%S')
 
 		  	add_fields = ("INSERT INTO sfobjectfield_sfobjectfield "
@@ -180,95 +171,99 @@ if sfobjfieldcheck == 0:
 	  	countobjectfields = ("SELECT COUNT(*) from sfobjectfield_sfobjectfield where field_obj_name = '%s' ") % cleanobjectname
 		inner_cur2.execute(countobjectfields)
 		result=inner_cur2.fetchone()
-		print ('All fields have now been added to mysql we added a total of', result)
+		cleanresult = " ".join(str(x) for x in result)
+		print ('All fields for %s object have now been added to your DB, there were a total of %s') % (cleanobjectname,cleanresult)
 else:
-	print ('Get list of Object currently stored in mysql')
+	print ('Query each object in the DB and check for new fields')
 	query = ("SELECT obj_name FROM sfobject_sfobject where obj_keyPrefix is not NULL")
 	cursor.execute(query)
 	
-	print ('Loop through each objectname prepare to check for new fields in salesforce now present in MySQL')
 	for x in cursor:
 		print ("Figure this script out later")
+		objectname = str(x)
+		cleanobjectname1 = objectname.replace("(","")
+		cleanobjectname2 = cleanobjectname1.replace("u'","")
+		cleanobjectname3 = cleanobjectname2.replace("'","")
+		cleanobjectname4 = cleanobjectname3.replace(",","")
+		cleanobjectname = cleanobjectname4.replace(")","")
+
+		# for xy in getattr(sf, cleanobjectname).describe()["fields"]:
 
 
 query = ("SELECT obj_name FROM sfobject_sfobject where obj_keyPrefix is not NULL")
 cursor.execute(query)
-print ('Create Tables for Each SF Object Exported')
 
-for newx in cursor:
-	objectname = str(newx)
-	cleanobjectname1 = objectname.replace("(","")
-	cleanobjectname2 = cleanobjectname1.replace("u'","")
-	cleanobjectname3 = cleanobjectname2.replace("'","")
-	cleanobjectname4 = cleanobjectname3.replace(",","")
-	cleanobjectname = cleanobjectname4.replace(")","")
-	finalcleanobjectname = 'sf_'+cleanobjectname
-	print (cleanobjectname)
-	print (finalcleanobjectname)
-	
-	querytblcreate = ("CREATE TABLE %s (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key) ENGINE=MyISAM") % finalcleanobjectname
-	inner_cur = cnx.cursor(buffered=True)
-	inner_cur.execute(querytblcreate)
-
-	query2 = ("SELECT field_name, field_type, field_length FROM sfobjectfield_sfobjectfield where field_obj_name = '%s' ") % cleanobjectname 
-	inner_curq = cnx.cursor(buffered=True)
-	inner_curq.execute(query2)
-
-	for xyz in inner_curq:
+if sfobjfieldcheck == 0:
+	print ('Perform the Initial Table Creation as this is the first import')
+	for newx in cursor:
 		objectname = str(newx)
-		fieldtype = xyz[1]
-		fieldname = xyz[0]
-		fieldlength = xyz[2]
 		cleanobjectname1 = objectname.replace("(","")
 		cleanobjectname2 = cleanobjectname1.replace("u'","")
 		cleanobjectname3 = cleanobjectname2.replace("'","")
 		cleanobjectname4 = cleanobjectname3.replace(",","")
 		cleanobjectname = cleanobjectname4.replace(")","")
 		finalcleanobjectname = 'sf_'+cleanobjectname
-
-
-		fn = 'SF_'+fieldname
 		
-		if fieldtype == 'id':
-			ft = 'VARCHAR(%s)' % (fieldlength)
-		if fieldtype == 'boolean':
-			ft = 'BOOL'
-		if fieldtype == 'datetime':
-			ft = 'DATETIME'
-		if fieldtype == 'reference':
-			ft = 'TEXT'
-		if fieldtype == 'string':
-			ft = 'TEXT'
-		if fieldtype == 'picklist':
-			ft = 'TEXT'
-		if fieldtype == 'textarea':
-			ft = 'BLOB'
-		if fieldtype == 'email':
-			ft = 'TEXT'
-		if fieldtype == 'url':
-			ft = 'TEXT'
-		if fieldtype == 'phone':
-			ft = 'TEXT'
-		if fieldtype == 'encryptedstring':
-			ft = 'TEXT'
-		if fieldtype == 'double':
-			ft = 'DECIMAL'
-		if fieldtype == 'date':
-			ft = 'DATE'
-		if fieldtype == 'multipicklist':
-			ft = 'TEXT'
-		if fieldtype == 'percent':
-			ft = 'DECIMAL'
-		if fieldtype == 'currency':
-			ft = 'VARCHAR(%s)' % (fieldlength)
-		print (fn)
-		print (fieldname)
-		print (fieldtype)
-		print (ft)
-		print (fieldlength)		
-		queryfigureshitout = ("ALTER TABLE %s ADD %s %s") % (finalcleanobjectname,fn, ft)
-		inner_cur1 = cnx.cursor(buffered=True)
-		inner_cur1.execute(queryfigureshitout)
+		querytblcreate = ("CREATE TABLE %s (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key) ENGINE=MyISAM") % finalcleanobjectname
+		inner_cur = cnx.cursor(buffered=True)
+		inner_cur.execute(querytblcreate)
+
+		query2 = ("SELECT field_name, field_type, field_length FROM sfobjectfield_sfobjectfield where field_obj_name = '%s' ") % cleanobjectname 
+		inner_curq = cnx.cursor(buffered=True)
+		inner_curq.execute(query2)
+
+		for xyz in inner_curq:
+			objectname = str(newx)
+			fieldtype = xyz[1]
+			fieldname = xyz[0]
+			fieldlength = xyz[2]
+			cleanobjectname1 = objectname.replace("(","")
+			cleanobjectname2 = cleanobjectname1.replace("u'","")
+			cleanobjectname3 = cleanobjectname2.replace("'","")
+			cleanobjectname4 = cleanobjectname3.replace(",","")
+			cleanobjectname = cleanobjectname4.replace(")","")
+			finalcleanobjectname = 'sf_'+cleanobjectname
+
+
+			fn = 'SF_'+fieldname
+			
+			if fieldtype == 'id':
+				ft = 'VARCHAR(%s)' % (fieldlength)
+			if fieldtype == 'boolean':
+				ft = 'BOOL'
+			if fieldtype == 'datetime':
+				ft = 'DATETIME'
+			if fieldtype == 'reference':
+				ft = 'TEXT'
+			if fieldtype == 'string':
+				ft = 'TEXT'
+			if fieldtype == 'picklist':
+				ft = 'TEXT'
+			if fieldtype == 'textarea':
+				ft = 'BLOB'
+			if fieldtype == 'email':
+				ft = 'TEXT'
+			if fieldtype == 'url':
+				ft = 'TEXT'
+			if fieldtype == 'phone':
+				ft = 'TEXT'
+			if fieldtype == 'encryptedstring':
+				ft = 'TEXT'
+			if fieldtype == 'double':
+				ft = 'DECIMAL'
+			if fieldtype == 'date':
+				ft = 'DATE'
+			if fieldtype == 'multipicklist':
+				ft = 'TEXT'
+			if fieldtype == 'percent':
+				ft = 'DECIMAL'
+			if fieldtype == 'currency':
+				ft = 'VARCHAR(%s)' % (fieldlength)	
+			queryfigureshitout = ("ALTER TABLE %s ADD %s %s") % (finalcleanobjectname,fn, ft)
+			inner_cur1 = cnx.cursor(buffered=True)
+			inner_cur1.execute(queryfigureshitout)
+else:
+	print ("what do i do now - arggggghhhh")
 
 print ('Ok so that is cool - we have just replicated the Salesforce scheme to MySQL')
 
