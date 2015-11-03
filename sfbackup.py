@@ -108,7 +108,33 @@ if sfobjcheck == 0:
 	result=cursor.fetchone()
 	print ('You list of objects have now been added to your local Database, you have a total of', result )
 else:
-	print('Figure this script out later')
+	for x in sf.describe()["sobjects"]:
+		objectname = x["name"]
+		countrecords = ("SELECT count(*) from sfobject_sfobject where obj_name = '%s'") % (objectname)
+		# print (countrecords)
+		cursor.execute(countrecords)
+		result=cursor.fetchone()
+		cleanresult = " ".join(str(x) for x in result)
+		# print(cleanresult)
+		if cleanresult == '1':
+			pass
+		else:
+			usefultime = time.strftime('%Y-%m-%d %H:%M:%S')
+			add_objects = ("INSERT INTO sfobject_sfobject "
+		              "(obj_name,obj_label,obj_keyPrefix,obj_createable,obj_custom,obj_customSetting,created_at,modified_at) "
+		              "VALUES (%(obj_name)s,%(obj_label)s,%(obj_keyPrefix)s,%(obj_createable)s,%(obj_custom)s,%(obj_customSetting)s,%(created_at)s,%(modified_at)s)")
+			data_objects = {
+			    'obj_name' : x["name"],
+		    	'obj_keyPrefix' : x["keyPrefix"],
+		    	'obj_label' : x["label"],
+			    'obj_createable' : x["createable"],
+			    'obj_custom' : x["custom"],
+			    'obj_customSetting' : x["customSetting"],
+			    'created_at' : usefultime,
+			    'modified_at' : usefultime,
+			}
+			cursor.execute(add_objects,data_objects)
+			cnx.commit()
 
 if sfobjfieldcheck == 0:
 	print ('Get list of Object currently stored in mysql')
@@ -156,7 +182,13 @@ if sfobjfieldcheck == 0:
 		result=inner_cur2.fetchone()
 		print ('All fields have now been added to mysql we added a total of', result)
 else:
-	print ("Figure this script out later")
+	print ('Get list of Object currently stored in mysql')
+	query = ("SELECT obj_name FROM sfobject_sfobject where obj_keyPrefix is not NULL")
+	cursor.execute(query)
+	
+	print ('Loop through each objectname prepare to check for new fields in salesforce now present in MySQL')
+	for x in cursor:
+		print ("Figure this script out later")
 
 
 query = ("SELECT obj_name FROM sfobject_sfobject where obj_keyPrefix is not NULL")
@@ -166,16 +198,19 @@ print ('Create Tables for Each SF Object Exported')
 for newx in cursor:
 	objectname = str(newx)
 	cleanobjectname1 = objectname.replace("(","")
-	cleanobjectname2 = cleanobjectname1.replace("'","")
-	cleanobjectname3 = cleanobjectname2.replace(",","")
-	cleanobjectname = cleanobjectname3.replace(")","")
+	cleanobjectname2 = cleanobjectname1.replace("u'","")
+	cleanobjectname3 = cleanobjectname2.replace("'","")
+	cleanobjectname4 = cleanobjectname3.replace(",","")
+	cleanobjectname = cleanobjectname4.replace(")","")
 	finalcleanobjectname = 'sf_'+cleanobjectname
+	print (cleanobjectname)
+	print (finalcleanobjectname)
 	
-	querytblcreate = ("CREATE TABLE %s (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key)") % finalcleanobjectname
+	querytblcreate = ("CREATE TABLE %s (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key) ENGINE=MyISAM") % finalcleanobjectname
 	inner_cur = cnx.cursor(buffered=True)
 	inner_cur.execute(querytblcreate)
 
-	query2 = ("SELECT field_name, field_type, field_length FROM sfobjectfield_sfobjectfield where field_obj_name = %s ") % cleanobjectname 
+	query2 = ("SELECT field_name, field_type, field_length FROM sfobjectfield_sfobjectfield where field_obj_name = '%s' ") % cleanobjectname 
 	inner_curq = cnx.cursor(buffered=True)
 	inner_curq.execute(query2)
 
@@ -185,47 +220,52 @@ for newx in cursor:
 		fieldname = xyz[0]
 		fieldlength = xyz[2]
 		cleanobjectname1 = objectname.replace("(","")
-		cleanobjectname2 = cleanobjectname1.replace("'","")
-		cleanobjectname3 = cleanobjectname2.replace(",","")
-		cleanobjectname = cleanobjectname3.replace(")","")
+		cleanobjectname2 = cleanobjectname1.replace("u'","")
+		cleanobjectname3 = cleanobjectname2.replace("'","")
+		cleanobjectname4 = cleanobjectname3.replace(",","")
+		cleanobjectname = cleanobjectname4.replace(")","")
 		finalcleanobjectname = 'sf_'+cleanobjectname
 
 
 		fn = 'SF_'+fieldname
-
+		
 		if fieldtype == 'id':
-			ft = 'VARCHAR(255)'
+			ft = 'VARCHAR(%s)' % (fieldlength)
 		if fieldtype == 'boolean':
 			ft = 'BOOL'
 		if fieldtype == 'datetime':
 			ft = 'DATETIME'
 		if fieldtype == 'reference':
-			ft = 'VARCHAR(255)'
+			ft = 'TEXT'
 		if fieldtype == 'string':
-			ft = 'VARCHAR(255)'
+			ft = 'TEXT'
 		if fieldtype == 'picklist':
-			ft = 'VARCHAR(255)'
+			ft = 'TEXT'
 		if fieldtype == 'textarea':
 			ft = 'BLOB'
 		if fieldtype == 'email':
-			ft = 'VARCHAR(255)'
+			ft = 'TEXT'
 		if fieldtype == 'url':
-			ft = 'VARCHA(255)'
+			ft = 'TEXT'
 		if fieldtype == 'phone':
-			ft = 'VARCHAR(255)'
+			ft = 'TEXT'
 		if fieldtype == 'encryptedstring':
-			ft = 'VARCHAR(255)'
+			ft = 'TEXT'
 		if fieldtype == 'double':
 			ft = 'DECIMAL'
 		if fieldtype == 'date':
 			ft = 'DATE'
 		if fieldtype == 'multipicklist':
-			ft = 'VARCHAR(255)'
+			ft = 'TEXT'
 		if fieldtype == 'percent':
 			ft = 'DECIMAL'
 		if fieldtype == 'currency':
-			ft = 'VARCHAR(255)'
-		
+			ft = 'VARCHAR(%s)' % (fieldlength)
+		print (fn)
+		print (fieldname)
+		print (fieldtype)
+		print (ft)
+		print (fieldlength)		
 		queryfigureshitout = ("ALTER TABLE %s ADD %s %s") % (finalcleanobjectname,fn, ft)
 		inner_cur1 = cnx.cursor(buffered=True)
 		inner_cur1.execute(queryfigureshitout)
