@@ -1,9 +1,7 @@
 import sys, os
-#sys.tracebacklimit = 0
 import mysql.connector
-from simple_salesforce import Salesforce
+from simple_salesforce import Salesforce, SalesforceError
 from simple_salesforce.login import SalesforceLogin
-from simple_salesforce.util import date_to_iso8601, SalesforceError
 import time
 
 # setup your environment
@@ -11,19 +9,19 @@ try:
 	from backconf import mysqlun,mysqlpwd,mysqlhn,mysqldb,sfusername,sfpassword,sfsecuritytoken
 	config = {'user': mysqlun,'password': mysqlpwd,'host': mysqlhn,'database': mysqldb,'raise_on_warnings': True,}
 	sf = Salesforce(username=sfusername, password=sfpassword, security_token=sfsecuritytoken)
-except ImportError, e:
-	print("error importing the file?")
-	mysqlusername = raw_input("MySQL Username: ")
-	mysqlpassword = raw_input("MySQL Password: ")
-	mysqldbname = raw_input("MySQL DBName: ")
-	mysqlhostname = raw_input("MySQL Hostname(localhost or remote url): ")
-	salesforceusername = raw_input("Salesforce Username: ")
-	salesforcepassword = raw_input("Salesforce Password: ")
-	salesforcesecuritytoken = raw_input("Salesforce Token: ")
-	storeconfigsettings = raw_input("Store these credentials(Yes/No): ")
+except ImportError as error:
+	print("No configuration file present.")
+	mysqlusername = input("MySQL Username: ")
+	mysqlpassword = input("MySQL Password: ")
+	mysqldbname = input("MySQL DBName: ")
+	mysqlhostname = input("MySQL Hostname(localhost or remote url): ")
+	salesforceusername = input("Salesforce Username: ")
+	salesforcepassword = input("Salesforce Password: ")
+	salesforcesecuritytoken = input("Salesforce Token: ")
+	storeconfigsettings = input("Store these credentials(Yes/No): ")
 
 	if storeconfigsettings == 'Yes':
-		print("Creating a stored credential in future you will not be asked for your credentials")
+		print("Creating a stored credential in future you will not be asked for your credentials - to be prompted again delete the file backconf.py")
 		file_path = 'backconf.py'
 		try:
 		    fp = open(file_path)
@@ -33,7 +31,7 @@ except ImportError, e:
 		    fp.write("mysqlun='%s'\nmysqlpwd='%s'\nmysqldb='%s'\nmysqlhn='%s'\nsfusername='%s'\nsfpassword='%s'\nsfsecuritytoken='%s'" % (mysqlusername,mysqlpassword,mysqldbname,mysqlhostname,salesforceusername,salesforcepassword,salesforcesecuritytoken))
 		    fp.close()
 	else:
-		print("Keep on rocking with temp connnection details")
+		print("Proceeding with temporary credentials")
 
 	config = {'user': mysqlusername,'password': mysqlpassword,'host': mysqlhostname,'database': mysqldbname,'raise_on_warnings': True,}
 	sf = Salesforce(username=salesforceusername, password=salesforcepassword, security_token=salesforcesecuritytoken)
@@ -62,22 +60,22 @@ sfobjectcheck = "SHOW TABLES LIKE 'sfobject_sfobject'"
 cursor.execute(sfobjectcheck)
 result1 = cursor.fetchone()
 if result1:
-    sfobjcheck = 1;
+    sfobjcheck = 1
 else:
 	sobjectablecreate = ("CREATE TABLE sfobject_sfobject (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key, obj_name TEXT,obj_keyPrefix TEXT,obj_label TEXT,obj_createable TEXT,obj_custom TEXT,obj_customSetting TEXT,created_at DATETIME DEFAULT NULL,modified_at DATETIME DEFAULT NULL)")
 	cursor.execute(sobjectablecreate)
-	sfobjcheck = 0;
+	sfobjcheck = 0
 
 print ("Checking to See if Default SF Object Field Table is available")
 sfobjectfieldcheck = "SHOW TABLES LIKE 'sfobjectfield_sfobjectfield'"
 cursor.execute(sfobjectfieldcheck)
 result2 = cursor.fetchone()
 if result2:
-    sfobjfieldcheck = 1;
+    sfobjfieldcheck = 1
 else:
 	sobjectablecreate = ("CREATE TABLE sfobjectfield_sfobjectfield (data_id int(11) NOT NULL AUTO_INCREMENT Primary Key, field_name TEXT,field_type TEXT,field_label TEXT,field_length TEXT,field_obj_name TEXT,created_at DATETIME DEFAULT NULL,modified_at DATETIME DEFAULT NULL)")
 	cursor.execute(sobjectablecreate)
-	sfobjfieldcheck = 0;
+	sfobjfieldcheck = 0
 
 if sfobjcheck == 0:
 	print ('Query SF and insert list of SF Objects into DB')
@@ -102,11 +100,11 @@ if sfobjcheck == 0:
 	cursor.execute(countobject)
 	result=cursor.fetchone()
 	cleanresult = " ".join(str(x) for x in result)
-	print ('SF Objects have now been imported into your local DB - %s objects imported') % (cleanresult)
+	print ('SF Objects have now been imported into your local DB - %s objects imported' % (cleanresult))
 else:
 	for x in sf.describe()["sobjects"]:
 		objectname = x["name"]
-		countrecords = ("SELECT count(*) from sfobject_sfobject where obj_name = '%s'") % (objectname)
+		countrecords = ("SELECT count(*) from sfobject_sfobject where obj_name = '%s'" % (objectname))
 		cursor.execute(countrecords)
 		result=cursor.fetchone()
 		cleanresult = " ".join(str(x) for x in result)
@@ -143,12 +141,6 @@ if sfobjfieldcheck == 0:
 		cleanobjectname = cleanobjectname4.replace(")","")
 
 		for xy in getattr(sf, cleanobjectname).describe()["fields"]:
-		 #  	objectname = str(x)
-		 #  	cleanobjectname1 = objectname.replace("(","")
-			# cleanobjectname2 = cleanobjectname1.replace("u'","")
-			# cleanobjectname3 = cleanobjectname2.replace("'","")
-			# cleanobjectname4 = cleanobjectname3.replace(",","")
-			# cleanobjectname = cleanobjectname4.replace(")","")
 		  	usefultime = time.strftime('%Y-%m-%d %H:%M:%S')
 
 		  	add_fields = ("INSERT INTO sfobjectfield_sfobjectfield "
@@ -167,12 +159,12 @@ if sfobjfieldcheck == 0:
 		  	inner_cur = cnx.cursor()
 		  	inner_cur.execute(add_fields,data_fields)
   			cnx.commit()
-	  	inner_cur2 = cnx.cursor()
-	  	countobjectfields = ("SELECT COUNT(*) from sfobjectfield_sfobjectfield where field_obj_name = '%s' ") % cleanobjectname
-		inner_cur2.execute(countobjectfields)
-		result=inner_cur2.fetchone()
-		cleanresult = " ".join(str(x) for x in result)
-		print ('All fields for %s object have now been added to your DB, there were a total of %s') % (cleanobjectname,cleanresult)
+	inner_cur2 = cnx.cursor()
+	countobjectfields = ("SELECT COUNT(*) from sfobjectfield_sfobjectfield where field_obj_name = '%s' ") % cleanobjectname
+	inner_cur2.execute(countobjectfields)
+	result=inner_cur2.fetchone()
+	cleanresult = " ".join(str(x) for x in result)
+	print ('All fields for %s object have now been added to your DB, there were a total of %s') % (cleanobjectname,cleanresult)
 else:
 	print ('Query each object in the DB and check for new fields')
 	query = ("SELECT obj_name FROM sfobject_sfobject where obj_keyPrefix is not NULL")
@@ -181,13 +173,15 @@ else:
 	for x in cursor:
 		print ("Figure this script out later")
 		objectname = str(x)
+		print (objectname)
 		cleanobjectname1 = objectname.replace("(","")
 		cleanobjectname2 = cleanobjectname1.replace("u'","")
 		cleanobjectname3 = cleanobjectname2.replace("'","")
 		cleanobjectname4 = cleanobjectname3.replace(",","")
 		cleanobjectname = cleanobjectname4.replace(")","")
 
-		# for xy in getattr(sf, cleanobjectname).describe()["fields"]:
+		for xy in getattr(sf, cleanobjectname).describe()["fields"]:
+			print(xy)
 
 
 query = ("SELECT obj_name FROM sfobject_sfobject where obj_keyPrefix is not NULL")
@@ -267,13 +261,13 @@ else:
 
 print ('Ok so that is cool - we have just replicated the Salesforce scheme to MySQL')
 
-# for x in cursor:
-# 	objectname = str(x)
-# 	cleanobjectname1 = objectname.replace("(","")
-# 	cleanobjectname2 = cleanobjectname1.replace("'","")
-# 	cleanobjectname3 = cleanobjectname2.replace(",","")
-# 	cleanobjectname = cleanobjectname3.replace(")","")
-# 	print (objectname)
+for x in cursor:
+ 	objectname = str(x)
+ 	cleanobjectname1 = objectname.replace("(","")
+ 	cleanobjectname2 = cleanobjectname1.replace("'","")
+ 	cleanobjectname3 = cleanobjectname2.replace(",","")
+ 	cleanobjectname = cleanobjectname3.replace(")","")
+ 	print (objectname)
 # 	for x in sf.query("SELECT Id FROM User"):
 
 # 		add_fields = ("INSERT INTO User "

@@ -1,4 +1,4 @@
-requests==2.8.1
-simple-salesforce==0.68.0
+requests==2.21.0
+simple-salesforce==0.74.2
 wheel==0.24.0
-mysql-connector-python==2.1.2
+mysql-connector-python==8.0.16
