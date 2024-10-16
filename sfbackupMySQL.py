@@ -18,8 +18,9 @@ mysql_password = 'your_mysql_password'
 mysql_database = 'your_mysql_database'
 
 # Get the current time to generate a unique log file
-start_datetime = datetime.now().strftime('%Y%m%d-%H%M%S')
-error_log_file = f"error-{start_datetime}.log"
+start_datetime = datetime.now()
+start_datetime_str = start_datetime.strftime('%Y%m%d-%H%M%S')
+error_log_file = f"error-{start_datetime_str}.log"
 
 def connect_to_salesforce():
     try:
@@ -62,8 +63,9 @@ def connect_to_mysql():
             database=mysql_database
         )
         
-        # Create error_objects table if it doesn't exist
+        # Create error_objects and backuprunlog tables if they don't exist
         create_error_table(conn)
+        create_backuprunlog_table(conn)
         
         return conn
     except Exception as e:
@@ -79,6 +81,39 @@ def create_error_table(conn):
         date_logged DATETIME
     )
     """)
+    conn.commit()
+
+def create_backuprunlog_table(conn):
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS backuprunlog (
+        run_id INT AUTO_INCREMENT PRIMARY KEY,
+        start_datetime DATETIME,
+        end_datetime DATETIME,
+        objects_backed_up INT,
+        error_objects INT
+    )
+    """)
+    conn.commit()
+
+def insert_backuprunlog_start(conn):
+    """Insert a new row into backuprunlog with the start time, and return the inserted run ID."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO backuprunlog (start_datetime, objects_backed_up, error_objects) VALUES (%s, 0, 0)",
+        (start_datetime,)
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+def update_backuprunlog_end(conn, run_id, objects_backed_up, error_objects):
+    """Update the end time and counts for the backup run log."""
+    end_datetime = datetime.now()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE backuprunlog SET end_datetime = %s, objects_backed_up = %s, error_objects = %s WHERE run_id = %s",
+        (end_datetime, objects_backed_up, error_objects, run_id)
+    )
     conn.commit()
 
 def get_skipped_objects(conn):
@@ -147,7 +182,7 @@ def create_mysql_tables(conn, objects_metadata):
             cursor.execute(create_table_sql)
             conn.commit()
         except Exception as e:
-            log_error(f"Create Table {object_name}", str(e))
+            log_error(f"Create Table {object_name}", str(e), create_table_sql)
             continue
 
 def map_salesforce_type_to_mysql(sf_type):
@@ -178,8 +213,11 @@ def convert_datetime(value):
         log_error("Datetime Conversion", str(e), value)
     return None
 
-def export_data_to_mysql(sf, conn, objects_metadata):
+def export_data_to_mysql(sf, conn, objects_metadata, run_id):
     cursor = conn.cursor()
+
+    objects_backed_up = 0
+    error_objects = 0
 
     for object_name, metadata in objects_metadata.items():
         try:
@@ -192,11 +230,13 @@ def export_data_to_mysql(sf, conn, objects_metadata):
             try:
                 result = sf.query_all(query)
             except Exception as e:
-                if "does not support query" in str(e):
+                if "does not support query" in str(e) or "MALFORMED_QUERY" in str(e):
                     log_query_error(conn, object_name, str(e))
+                    error_objects += 1
                     continue
                 else:
                     log_error(f"Query {object_name}", str(e), query)
+                    error_objects += 1
                     continue
             
             if 'records' in result and result['records']:
@@ -227,20 +267,27 @@ def export_data_to_mysql(sf, conn, objects_metadata):
                         values.append(value)
                     
                     cursor.execute(insert_sql, values)
-            
+
+            objects_backed_up += 1
             conn.commit()
+
         except Exception as e:
             log_error(f"Export Data for {object_name}", str(e), query)
+            error_objects += 1
             continue
+    
+    # Update the backuprunlog at the end
+    update_backuprunlog_end(conn, run_id, objects_backed_up, error_objects)
 
 def log_query_error(conn, object_name, error_message):
+    """Logs objects with errors 'does not support query' or 'MALFORMED_QUERY' to the error_objects table."""
     cursor = conn.cursor()
     cursor.execute(
         "INSERT IGNORE INTO error_objects (object_name, error_message, date_logged) VALUES (%s, %s, %s)",
         (object_name, error_message, datetime.now())
     )
     conn.commit()
-    print(f"Logged non-queryable object: {object_name}")
+    print(f"Logged non-queryable or malformed query object: {object_name}")
 
 def log_error(step, error_message, query=None):
     with open(error_log_file, "a") as error_file:
@@ -254,10 +301,15 @@ def log_error(step, error_message, query=None):
 def main():
     sf = connect_to_salesforce()
     conn = connect_to_mysql()
+
+    # Insert a new row into the backuprunlog with the start time
+    run_id = insert_backuprunlog_start(conn)
+
     skipped_objects = get_skipped_objects(conn)
     objects_metadata = get_salesforce_metadata(sf, skipped_objects)
     create_mysql_tables(conn, objects_metadata)
-    export_data_to_mysql(sf, conn, objects_metadata)
+    export_data_to_mysql(sf, conn, objects_metadata, run_id)
+    
     conn.close()
 
 if __name__ == '__main__':
